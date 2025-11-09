@@ -37,6 +37,9 @@ select = [
     "C4",  # flake8-comprehensions
     "UP",  # pyupgrade
 ]
+ignore = [
+    "UP046",  # Generic[T] syntax - keeping for compatibility
+]
 
 [tool.ruff.format]
 quote-style = "double"

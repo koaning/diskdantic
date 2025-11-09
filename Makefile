@@ -2,6 +2,7 @@
 
 # Install dependencies using uv
 install:
+	uv venv --allow-existing
 	uv sync --group dev
 	uv run pre-commit install
 
