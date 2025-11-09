@@ -38,7 +38,7 @@ new_post = BlogPost(
 posts.add(new_post)
 ```
 
-There are also loads of utility functions. 
+There are also loads of utility functions.
 
 ```python
 # Get all published posts
@@ -91,5 +91,4 @@ for post in posts:
 It makes it easier to write a custom CMS on top of your disk, which is nice. But it also feels like a fun thing that should exist. It's mainly a fun brainfart for now, but I can see some areas where I might make it better too.
 
 1. Figure out a nice API for a nested collection. The library has one now, but undocumented for a reason.
-2. Maybe make it more performant by seeing how far I can push the lazy loading. Though I doubt this will be worth it. 
-
+2. Maybe make it more performant by seeing how far I can push the lazy loading. Though I doubt this will be worth it.
