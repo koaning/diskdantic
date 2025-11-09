@@ -231,3 +231,36 @@ def test_add_prevents_duplicates_from_loaded_models(tmp_path: Path) -> None:
     assert final_count == 3
     assert len(files) == 3
     assert {f.stem for f in files} == {"first", "second", "third"}
+
+
+def test_json_date_roundtrip_preserves_type(tmp_path: Path) -> None:
+    """Test that date objects are preserved as date type after JSON roundtrip."""
+    posts = Collection(BlogPost, path=tmp_path, format="json", body_field="content")
+
+    original_date = date(2025, 11, 9)
+    post = BlogPost(
+        title="Date Test",
+        date=original_date,
+        tags=["test"],
+        content="Testing date preservation",
+    )
+
+    # Write the post
+    path = posts.add(post)
+
+    # Verify JSON contains ISO 8601 string
+    import json
+
+    with path.open("r") as f:
+        raw_data = json.load(f)
+    assert raw_data["date"] == "2025-11-09"
+    assert isinstance(raw_data["date"], str)
+
+    # Load it back and verify date type is preserved
+    loaded = posts.first()
+    assert loaded is not None
+    assert isinstance(loaded.date, date), f"Expected date type, got {type(loaded.date)}"
+    assert loaded.date == original_date
+    assert loaded.date.year == 2025
+    assert loaded.date.month == 11
+    assert loaded.date.day == 9
