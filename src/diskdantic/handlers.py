@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+import orjson
 import yaml
 
 
@@ -46,9 +47,9 @@ class JsonHandler(FileHandler):
         body_field: str | None = None,
     ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as fh:
-            json.dump(data, fh, ensure_ascii=False, indent=2)
-            fh.write("\n")
+        with path.open("wb") as fh:
+            fh.write(orjson.dumps(data, option=orjson.OPT_INDENT_2))
+            fh.write(b"\n")
 
 
 class YamlHandler(FileHandler):
