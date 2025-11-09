@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import weakref
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Generic, Iterable, Iterator, List, Mapping, Optional, TypeVar
+from typing import Generic, TypeVar
 from uuid import uuid4
-import weakref
 
 from pydantic import BaseModel
 
@@ -89,9 +90,7 @@ class Collection(Generic[T]):
         self.root.mkdir(parents=True, exist_ok=True)
         self._recursive = recursive
         self._handler = (
-            _resolve_handler(format)
-            if format is not None
-            else self._infer_handler(strict=True)
+            _resolve_handler(format) if format is not None else self._infer_handler(strict=True)
         )
         self.body_field = body_field
 
@@ -99,31 +98,31 @@ class Collection(Generic[T]):
         self._path_refs: dict[int, tuple[weakref.ReferenceType[T], Path]] = {}
 
     # Query entrypoints -------------------------------------------------
-    def query(self) -> "CollectionQuery[T]":
+    def query(self) -> CollectionQuery[T]:
         return CollectionQuery(self)
 
-    def filter(self, predicate: Predicate) -> "CollectionQuery[T]":
+    def filter(self, predicate: Predicate) -> CollectionQuery[T]:
         return self.query().filter(predicate)
 
-    def order_by(self, field: str) -> "CollectionQuery[T]":
+    def order_by(self, field: str) -> CollectionQuery[T]:
         return self.query().order_by(field)
 
-    def head(self, n: int = 5) -> "CollectionQuery[T]":
+    def head(self, n: int = 5) -> CollectionQuery[T]:
         return self.query().head(n)
 
-    def tail(self, n: int = 5) -> "CollectionQuery[T]":
+    def tail(self, n: int = 5) -> CollectionQuery[T]:
         return self.query().tail(n)
 
-    def to_list(self) -> List[T]:
+    def to_list(self) -> list[T]:
         return self.query().to_list()
 
     def count(self) -> int:
         return self.query().count()
 
-    def first(self) -> Optional[T]:
+    def first(self) -> T | None:
         return self.query().first()
 
-    def last(self) -> Optional[T]:
+    def last(self) -> T | None:
         return self.query().last()
 
     def exists(self, predicate: Predicate | None = None) -> bool:
@@ -134,7 +133,7 @@ class Collection(Generic[T]):
     def __iter__(self) -> Iterator[T]:
         return iter(self.query())
 
-    def get(self, filename: str | Path) -> Optional[T]:
+    def get(self, filename: str | Path) -> T | None:
         """Load a single file by name relative to the collection root."""
         target = Path(filename)
         if not target.is_absolute():
@@ -255,9 +254,7 @@ class Collection(Generic[T]):
         return path
 
     def _iter_paths(self) -> Iterable[Path]:
-        extensions = (
-            self._handler.extensions or (self._handler.extension,)
-        )
+        extensions = self._handler.extensions or (self._handler.extension,)
         seen: set[Path] = set()
         for suffix in dict.fromkeys(extensions):
             pattern = f"*{suffix}"
@@ -277,8 +274,8 @@ class Collection(Generic[T]):
             handler_cls = EXTENSION_REGISTRY.get(suffix)
             if handler_cls is None:
                 raise UnknownFormatError(
-                    f"Cannot infer handler: file '{path.name}' has unsupported extension '{suffix}'. "
-                    "Pass format=... explicitly."
+                    f"Cannot infer handler: file '{path.name}' has unsupported "
+                    f"extension '{suffix}'. Pass format=... explicitly."
                 )
             seen_handlers.add(handler_cls)
             if len(seen_handlers) > 1:
@@ -289,8 +286,7 @@ class Collection(Generic[T]):
         if not seen_handlers:
             if strict:
                 raise UnknownFormatError(
-                    "Cannot infer format for empty collection. "
-                    "Pass format=... explicitly."
+                    "Cannot infer format for empty collection. Pass format=... explicitly."
                 )
             return MarkdownFrontmatterHandler()
         handler_cls = next(iter(seen_handlers))
@@ -302,31 +298,31 @@ class CollectionQuery(Generic[T]):
 
     def __init__(self, collection: Collection[T]) -> None:
         self._collection = collection
-        self._predicates: List[Predicate] = []
-        self._sort: Optional[_SortInstruction] = None
-        self._post_ops: List[Callable[[List[T]], List[T]]] = []
+        self._predicates: list[Predicate] = []
+        self._sort: _SortInstruction | None = None
+        self._post_ops: list[Callable[[list[T]], list[T]]] = []
 
     # Pipeline construction ---------------------------------------------
-    def filter(self, predicate: Predicate) -> "CollectionQuery[T]":
+    def filter(self, predicate: Predicate) -> CollectionQuery[T]:
         next_query = self._clone()
         next_query._predicates.append(predicate)
         return next_query
 
-    def order_by(self, field: str) -> "CollectionQuery[T]":
+    def order_by(self, field: str) -> CollectionQuery[T]:
         descending = field.startswith("-")
         normalized = field[1:] if descending else field
         next_query = self._clone()
         next_query._sort = _SortInstruction(field=normalized, descending=descending)
         return next_query
 
-    def head(self, n: int = 5) -> "CollectionQuery[T]":
+    def head(self, n: int = 5) -> CollectionQuery[T]:
         if n < 0:
             raise ValueError("head expects a non-negative integer")
         next_query = self._clone()
         next_query._post_ops.append(lambda items, n=n: items[:n])
         return next_query
 
-    def tail(self, n: int = 5) -> "CollectionQuery[T]":
+    def tail(self, n: int = 5) -> CollectionQuery[T]:
         if n < 0:
             raise ValueError("tail expects a non-negative integer")
         next_query = self._clone()
@@ -334,7 +330,7 @@ class CollectionQuery(Generic[T]):
         return next_query
 
     # Materialization ---------------------------------------------------
-    def to_list(self) -> List[T]:
+    def to_list(self) -> list[T]:
         items = [self._collection._load_model(path) for path in self._collection._iter_paths()]
         for predicate in self._predicates:
             items = [item for item in items if predicate(item)]
@@ -348,12 +344,12 @@ class CollectionQuery(Generic[T]):
     def count(self) -> int:
         return len(self.to_list())
 
-    def first(self) -> Optional[T]:
+    def first(self) -> T | None:
         for item in self:
             return item
         return None
 
-    def last(self) -> Optional[T]:
+    def last(self) -> T | None:
         items = self.to_list()
         return items[-1] if items else None
 
@@ -361,7 +357,7 @@ class CollectionQuery(Generic[T]):
         return iter(self.to_list())
 
     # Utilities ---------------------------------------------------------
-    def _clone(self) -> "CollectionQuery[T]":
+    def _clone(self) -> CollectionQuery[T]:
         clone = CollectionQuery(self._collection)
         clone._predicates = list(self._predicates)
         clone._sort = self._sort

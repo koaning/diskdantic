@@ -10,7 +10,6 @@ from pydantic import BaseModel
 from diskdantic import Collection
 from diskdantic.exceptions import UnknownFormatError
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 

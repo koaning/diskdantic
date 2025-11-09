@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import builtins
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generic, Iterator, List, Optional, TypeVar
+from typing import Generic, TypeVar
 
 from pydantic import BaseModel
 
@@ -18,7 +20,7 @@ class NestedRecord(Generic[P, C]):
 
     path: Path
     info: P
-    episodes: List[C]
+    episodes: list[C]
     episodes_collection: Collection[C]
 
 
@@ -69,7 +71,7 @@ class NestedCollection(Generic[P, C]):
         self.child_body_field = child_body_field
 
     # Public API --------------------------------------------------------
-    def list(self) -> List[NestedRecord[P, C]]:
+    def list(self) -> builtins.list[NestedRecord[P, C]]:
         return list(self)
 
     def __iter__(self) -> Iterator[NestedRecord[P, C]]:
@@ -78,20 +80,20 @@ class NestedCollection(Generic[P, C]):
             if record is not None:
                 yield record
 
-    def get(self, slug: str) -> Optional[NestedRecord[P, C]]:
+    def get(self, slug: str) -> NestedRecord[P, C] | None:
         folder = self.root / slug
         if not folder.is_dir():
             return None
         return self._load_folder(folder)
 
-    def refresh(self, record: NestedRecord[P, C]) -> Optional[NestedRecord[P, C]]:
+    def refresh(self, record: NestedRecord[P, C]) -> NestedRecord[P, C] | None:
         return self._load_folder(record.path)
 
     # Internal helpers --------------------------------------------------
     def _iter_folders(self) -> Iterator[Path]:
         yield from (path for path in self.root.iterdir() if path.is_dir())
 
-    def _load_folder(self, folder: Path) -> Optional[NestedRecord[P, C]]:
+    def _load_folder(self, folder: Path) -> NestedRecord[P, C] | None:
         parent_path = folder / self.parent_filename
         if not parent_path.exists():
             return None
@@ -126,11 +128,11 @@ class NestedCollection(Generic[P, C]):
             episodes_collection=episodes_collection,
         )
 
-    def _matches_child_pattern(self, path: Optional[Path]) -> bool:
+    def _matches_child_pattern(self, path: Path | None) -> bool:
         if path is None:
             return False
         return path.match(self.child_pattern)
 
     @staticmethod
-    def _sort_key(path: Optional[Path]) -> str:
+    def _sort_key(path: Path | None) -> str:
         return path.name if path is not None else ""

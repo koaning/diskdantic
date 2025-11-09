@@ -6,10 +6,12 @@ app = marimo.App(sql_output="polars")
 
 @app.cell
 def _():
-    import marimo as mo
-    from diskdantic import NestedCollection, Collection
-    from pydantic import BaseModel
     from datetime import date
+
+    from pydantic import BaseModel
+
+    from diskdantic import Collection
+
     return BaseModel, Collection, date
 
 

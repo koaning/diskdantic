@@ -12,7 +12,3 @@ class MissingPathError(DiskdanticError):
 
 class InconsistentFormatError(DiskdanticError):
     """Raised when multiple file formats are encountered in a collection."""
-
-
-class InconsistentFormatError(DiskdanticError):
-    """Raised when multiple file formats are encountered in a collection."""

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
-
 import json
+from abc import ABC, abstractmethod
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -16,7 +16,7 @@ class FileHandler(ABC):
     extensions: tuple[str, ...] | None = None
 
     @abstractmethod
-    def read(self, path: Path, *, body_field: Optional[str] = None) -> Dict[str, Any]:
+    def read(self, path: Path, *, body_field: str | None = None) -> dict[str, Any]:
         """Read the file and return a dictionary payload for Pydantic."""
 
     @abstractmethod
@@ -25,7 +25,7 @@ class FileHandler(ABC):
         path: Path,
         data: Mapping[str, Any],
         *,
-        body_field: Optional[str] = None,
+        body_field: str | None = None,
     ) -> None:
         """Persist a dictionary payload to disk."""
 
@@ -34,7 +34,7 @@ class JsonHandler(FileHandler):
     extension = ".json"
     extensions = (".json",)
 
-    def read(self, path: Path, *, body_field: Optional[str] = None) -> Dict[str, Any]:
+    def read(self, path: Path, *, body_field: str | None = None) -> dict[str, Any]:
         with path.open("r", encoding="utf-8") as fh:
             return json.load(fh)
 
@@ -43,7 +43,7 @@ class JsonHandler(FileHandler):
         path: Path,
         data: Mapping[str, Any],
         *,
-        body_field: Optional[str] = None,
+        body_field: str | None = None,
     ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as fh:
@@ -55,7 +55,7 @@ class YamlHandler(FileHandler):
     extension = ".yaml"
     extensions = (".yaml", ".yml")
 
-    def read(self, path: Path, *, body_field: Optional[str] = None) -> Dict[str, Any]:
+    def read(self, path: Path, *, body_field: str | None = None) -> dict[str, Any]:
         with path.open("r", encoding="utf-8") as fh:
             payload = yaml.safe_load(fh) or {}
             if not isinstance(payload, dict):
@@ -67,7 +67,7 @@ class YamlHandler(FileHandler):
         path: Path,
         data: Mapping[str, Any],
         *,
-        body_field: Optional[str] = None,
+        body_field: str | None = None,
     ) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as fh:
@@ -78,7 +78,7 @@ class MarkdownFrontmatterHandler(FileHandler):
     extension = ".md"
     extensions = (".md", ".markdown")
 
-    def read(self, path: Path, *, body_field: Optional[str] = None) -> Dict[str, Any]:
+    def read(self, path: Path, *, body_field: str | None = None) -> dict[str, Any]:
         text = path.read_text(encoding="utf-8")
         meta, body = _split_frontmatter(text)
         data = dict(meta)
@@ -91,7 +91,7 @@ class MarkdownFrontmatterHandler(FileHandler):
         path: Path,
         data: Mapping[str, Any],
         *,
-        body_field: Optional[str] = None,
+        body_field: str | None = None,
     ) -> None:
         field = body_field or "content"
         payload = dict(data)
@@ -102,7 +102,7 @@ class MarkdownFrontmatterHandler(FileHandler):
         path.write_text(rendered, encoding="utf-8")
 
 
-def _split_frontmatter(text: str) -> tuple[Dict[str, Any], str]:
+def _split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     if not text.startswith("---"):
         return {}, text
 

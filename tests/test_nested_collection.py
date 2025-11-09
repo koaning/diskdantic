@@ -8,7 +8,6 @@ from pydantic import BaseModel
 
 from diskdantic import NestedCollection
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 

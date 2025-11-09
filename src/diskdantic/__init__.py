@@ -6,7 +6,7 @@ of files adhering to a shared schema described by a Pydantic ``BaseModel``.
 """
 
 from .collection import Collection
-from .handlers import MarkdownFrontmatterHandler, JsonHandler, YamlHandler
+from .handlers import JsonHandler, MarkdownFrontmatterHandler, YamlHandler
 from .nested import NestedCollection, NestedRecord
 
 __all__ = [
