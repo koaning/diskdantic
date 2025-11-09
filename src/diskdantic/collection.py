@@ -147,6 +147,11 @@ class Collection(Generic[T]):
 
     # Lifecycle operations ----------------------------------------------
     def add(self, model: T, path: Path | str | None = None) -> Path:
+        # Check if model is already tracked - if so, return existing path
+        existing_path = self._lookup_path(model)
+        if existing_path is not None:
+            return existing_path
+
         target = self._prepare_path(model, explicit_path=path)
         data = model.model_dump()
         self._handler.write(target, data, body_field=self.body_field)

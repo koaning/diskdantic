@@ -79,3 +79,123 @@ def test_collection_basic_roundtrip(tmp_path: Path) -> None:
 def test_collection_requires_format_when_empty(tmp_path: Path) -> None:
     with pytest.raises(UnknownFormatError):
         Collection(BlogPost, path=tmp_path)
+
+
+def test_date_serialization_json(tmp_path: Path) -> None:
+    """Test that date objects are correctly serialized in JSON format."""
+    posts = Collection(BlogPost, path=tmp_path, format="json", body_field="content")
+
+    post = BlogPost(
+        title="JSON Test",
+        date=date(2025, 11, 9),
+        tags=["test"],
+        content="Testing JSON serialization",
+    )
+
+    path = posts.add(post)
+
+    # Verify file was created
+    assert path.exists()
+    assert path.suffix == ".json"
+
+    # Verify content is valid JSON with proper date format
+    import json
+
+    with path.open("r") as f:
+        data = json.load(f)
+    assert data["date"] == "2025-11-09"
+
+    # Verify we can load it back correctly
+    loaded = posts.first()
+    assert loaded is not None
+    assert loaded.date == date(2025, 11, 9)
+    assert isinstance(loaded.date, date)
+
+
+def test_date_serialization_yaml(tmp_path: Path) -> None:
+    """Test that date objects are correctly serialized in YAML format."""
+    posts = Collection(BlogPost, path=tmp_path, format="yaml", body_field="content")
+
+    post = BlogPost(
+        title="YAML Test",
+        date=date(2025, 11, 9),
+        tags=["test"],
+        content="Testing YAML serialization",
+    )
+
+    path = posts.add(post)
+
+    # Verify file was created
+    assert path.exists()
+    assert path.suffix == ".yaml"
+
+    # Verify content is valid YAML with proper date format
+    import yaml
+
+    with path.open("r") as f:
+        data = yaml.safe_load(f)
+    assert data["date"] == date(2025, 11, 9)  # YAML preserves date objects
+
+    # Verify we can load it back correctly
+    loaded = posts.first()
+    assert loaded is not None
+    assert loaded.date == date(2025, 11, 9)
+    assert isinstance(loaded.date, date)
+
+
+def test_date_serialization_markdown(tmp_path: Path) -> None:
+    """Test that date objects are correctly serialized in Markdown frontmatter."""
+    posts = Collection(BlogPost, path=tmp_path, format="markdown", body_field="content")
+
+    post = BlogPost(
+        title="Markdown Test",
+        date=date(2025, 11, 9),
+        tags=["test"],
+        content="Testing Markdown serialization",
+    )
+
+    path = posts.add(post)
+
+    # Verify file was created
+    assert path.exists()
+    assert path.suffix == ".md"
+
+    # Verify content has proper frontmatter with date
+    content = path.read_text()
+    assert content.startswith("---")
+    assert "date: 2025-11-09" in content
+    assert "Testing Markdown serialization" in content
+
+    # Verify we can load it back correctly
+    loaded = posts.first()
+    assert loaded is not None
+    assert loaded.date == date(2025, 11, 9)
+    assert isinstance(loaded.date, date)
+
+
+def test_add_prevents_duplicates(tmp_path: Path) -> None:
+    """Test that calling add() multiple times with same model doesn't create duplicates."""
+    posts = Collection(BlogPost, path=tmp_path, format="yaml", body_field="content")
+
+    post = BlogPost(
+        title="Test Post",
+        date=date(2025, 11, 9),
+        tags=["test"],
+        content="Testing duplicate prevention",
+    )
+
+    # Add the same model object multiple times
+    path1 = posts.add(post)
+    path2 = posts.add(post)
+    path3 = posts.add(post)
+
+    # All paths should be the same
+    assert path1 == path2 == path3
+
+    # Only one file should exist
+    files = list(tmp_path.glob("*.yaml"))
+    assert len(files) == 1
+    assert files[0] == path1
+
+    # Verify the collection only sees one post
+    assert posts.count() == 1
