@@ -256,8 +256,11 @@ def test_json_date_roundtrip_preserves_type(tmp_path: Path) -> None:
     assert raw_data["date"] == "2025-11-09"
     assert isinstance(raw_data["date"], str)
 
-    # Load it back and verify date type is preserved
-    loaded = posts.first()
+    # Create a NEW collection to load from disk (simulates fresh read)
+    posts_reloaded = Collection(BlogPost, path=tmp_path, format="json", body_field="content")
+    loaded = posts_reloaded.first()
+
+    # Verify date type is preserved after loading in new collection
     assert loaded is not None
     assert isinstance(loaded.date, date), f"Expected date type, got {type(loaded.date)}"
     assert loaded.date == original_date
