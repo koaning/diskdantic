@@ -7,6 +7,4 @@ of files adhering to a shared schema described by a Pydantic ``BaseModel``.
 
 from .collection import Collection
 
-__all__ = [
-    "Collection"
-]
+__all__ = ["Collection"]
