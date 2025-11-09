@@ -38,11 +38,57 @@ new_post = BlogPost(
 posts.add(new_post)
 ```
 
-It's meant to work with markdown files, but it should also work with yaml/json. 
+There are also loads of utility functions. 
 
-## Why? 
+```python
+# Get all published posts
+published = posts.filter(lambda post: not post.draft)
 
-It makes it easier to write a custom CMS on top of your disk, which is nice. But it also feels like a fun thing that should exist. It's mainly a fun brainfart for now, but I can see some areas where I might make it better too. 
+# Get posts with specific tag
+intro_posts = posts.filter(lambda post: "intro" in post.tags)
+
+# Chain filters
+recent_published = posts.filter(lambda p: not p.draft).filter(lambda p: p.date.year == 2025)
+```
+
+It's meant to work with markdown files, but it should also work with yaml/json.
+
+## API Reference
+
+### Query Methods
+
+- **`filter(predicate)`** - Filter items by a predicate function
+- **`order_by(field)`** - Sort by field (prefix with `-` for descending)
+- **`head(n=5)`** - Get first n items
+- **`tail(n=5)`** - Get last n items
+- **`to_list()`** - Materialize query to list
+- **`count()`** - Count matching items
+- **`first()`** - Get first item or None
+- **`last()`** - Get last item or None
+- **`exists(predicate=None)`** - Check if any items match
+- **`get(filename)`** - Load specific file by name
+
+### Lifecycle Methods
+
+- **`add(model, path=None)`** - Add new model to collection (returns Path)
+- **`update(model)`** - Update existing model on disk (returns Path)
+- **`upsert(model)`** - Add if new, update if exists (returns Path)
+- **`delete(target)`** - Delete by model, filename, or Path
+- **`refresh(model)`** - Reload model from disk
+- **`path_for(model)`** - Get disk path for a model
+
+### Iteration
+
+Collections are iterable and return model instances:
+
+```python
+for post in posts:
+    print(post.title)
+```
+
+## Why?
+
+It makes it easier to write a custom CMS on top of your disk, which is nice. But it also feels like a fun thing that should exist. It's mainly a fun brainfart for now, but I can see some areas where I might make it better too.
 
 1. Figure out a nice API for a nested collection. The library has one now, but undocumented for a reason.
 2. Maybe make it more performant by seeing how far I can push the lazy loading. Though I doubt this will be worth it. 
