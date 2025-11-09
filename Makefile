@@ -1,18 +1,28 @@
-.PHONY: install
+.PHONY: install lint test publish clean
+
+# Install dependencies using uv
 install:
 	uv sync --group dev
 	uv run pre-commit install
 
-.PHONY: lint
+# Run linting
 lint:
 	uv run pre-commit run --all-files
 
-.PHONY: test
+# Run tests
 test:
 	uv run pytest
 
-.PHONY: clean
+# Publish to PyPI
+publish:
+	uv build
+	uv publish
+
+# Clean up build artifacts and caches
 clean:
+	rm -rf build/
+	rm -rf dist/
+	rm -rf *.egg-info
 	rm -rf .venv
 	rm -rf .pytest_cache
 	rm -rf .ruff_cache
