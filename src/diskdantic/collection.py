@@ -209,6 +209,15 @@ class Collection(Generic[T]):
                 path = self.root / path
             return path
         candidate = self._derive_path_for_model(model)
+
+        # If the derived path exists, check if it contains the same data
+        if candidate.exists():
+            existing_model = self._load_model(candidate, force=True)
+            if existing_model.model_dump() == model.model_dump():
+                # Same content - reuse this path
+                return candidate
+
+        # Path doesn't exist or contains different content - find an available name
         counter = 1
         while candidate.exists():
             candidate = candidate.with_stem(f"{candidate.stem}-{counter}")

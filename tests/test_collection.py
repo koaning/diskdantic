@@ -199,3 +199,35 @@ def test_add_prevents_duplicates(tmp_path: Path) -> None:
 
     # Verify the collection only sees one post
     assert posts.count() == 1
+
+
+def test_add_prevents_duplicates_from_loaded_models(tmp_path: Path) -> None:
+    """Test that adding loaded models doesn't create duplicates."""
+    posts = Collection(BlogPost, path=tmp_path, format="yaml", body_field="content")
+
+    # Create and add initial posts
+    initial_posts = [
+        BlogPost(title="First", date=date(2025, 1, 1), content="First post"),
+        BlogPost(title="Second", date=date(2025, 1, 2), content="Second post"),
+        BlogPost(title="Third", date=date(2025, 1, 3), content="Third post"),
+    ]
+
+    for p in initial_posts:
+        posts.add(p)
+
+    initial_count = posts.count()
+    assert initial_count == 3
+
+    # Load posts and try to add them again (simulates iteration pattern)
+    for _ in range(10):
+        posts_new = Collection(BlogPost, path=tmp_path, format="yaml", body_field="content")
+        for p in posts:
+            posts_new.add(p)
+
+    # Should still have exactly 3 posts and 3 files
+    final_count = posts_new.count()
+    files = list(tmp_path.glob("*.yaml"))
+
+    assert final_count == 3
+    assert len(files) == 3
+    assert {f.stem for f in files} == {"first", "second", "third"}
