@@ -76,6 +76,7 @@ It's meant to work with markdown files, but it should also work with yaml/json.
 - **`delete(target)`** - Delete by model, filename, or Path
 - **`refresh(model)`** - Reload model from disk
 - **`path_for(model)`** - Get disk path for a model
+- **`migrate(new_model, path, format=None, ...)`** - Migrate to new model type and/or format
 
 ### Iteration
 
@@ -84,6 +85,72 @@ Collections are iterable and return model instances:
 ```python
 for post in posts:
     print(post.title)
+```
+
+## Migration
+
+The `migrate()` method makes it easy to convert collections between formats or evolve your schema:
+
+### Format Conversion
+
+Convert between JSON, YAML, and Markdown formats while preserving all data including dates:
+
+```python
+# Migrate from JSON to YAML
+json_posts = Collection(BlogPost, "posts-json", format="json")
+yaml_posts = json_posts.migrate(BlogPost, path="posts-yaml", format="yaml")
+
+# Migrate from Markdown to JSON
+md_posts = Collection(BlogPost, "posts-md", format="markdown", body_field="content")
+json_posts = md_posts.migrate(BlogPost, path="posts-json", format="json")
+```
+
+Date fields are automatically preserved with correct types across all formats.
+
+### Schema Evolution
+
+Migrate to an enhanced model with new fields:
+
+```python
+class EnhancedBlogPost(BaseModel):
+    title: str
+    date: date
+    tags: list[str] = []
+    draft: bool = False
+    content: str
+    view_count: int = 0  # New field with default
+    author: str = "Anonymous"  # New field with default
+
+# Migrate to enhanced schema
+enhanced_posts = posts.migrate(EnhancedBlogPost, path="posts-enhanced")
+```
+
+### Custom Transformations
+
+Use a custom transform function for complex migrations:
+
+```python
+from datetime import datetime
+
+class TimestampedPost(BaseModel):
+    title: str
+    date: date
+    tags: list[str] = []
+    draft: bool = False
+    content: str
+    created_at: datetime
+
+def add_timestamp(old: BlogPost) -> TimestampedPost:
+    return TimestampedPost(
+        **old.model_dump(),
+        created_at=datetime.now()
+    )
+
+timestamped_posts = posts.migrate(
+    TimestampedPost,
+    path="posts-timestamped",
+    transform=add_timestamp
+)
 ```
 
 ## Why?

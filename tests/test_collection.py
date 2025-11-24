@@ -267,3 +267,150 @@ def test_json_date_roundtrip_preserves_type(tmp_path: Path) -> None:
     assert loaded.date.year == 2025
     assert loaded.date.month == 11
     assert loaded.date.day == 9
+
+
+@pytest.mark.parametrize(
+    "source_format,target_format",
+    [
+        ("json", "yaml"),
+        ("yaml", "json"),
+        ("json", "markdown"),
+        ("markdown", "json"),
+        ("yaml", "markdown"),
+        ("markdown", "yaml"),
+    ],
+)
+def test_migrate_format_conversion(tmp_path: Path, source_format: str, target_format: str) -> None:
+    """Test migrating collections between different formats preserves all data."""
+    source_path = tmp_path / f"{source_format}_posts"
+    target_path = tmp_path / f"{target_format}_posts"
+
+    # Create source collection with test data including dates
+    source_posts = Collection(
+        BlogPost, path=source_path, format=source_format, body_field="content"
+    )
+
+    test_posts = [
+        BlogPost(title="First", date=date(2025, 1, 1), tags=["test"], content="First post"),
+        BlogPost(title="Second", date=date(2025, 12, 25), tags=["test"], content="Second post"),
+    ]
+
+    for post in test_posts:
+        source_posts.add(post)
+
+    # Migrate to target format
+    source_posts.migrate(BlogPost, path=target_path, format=target_format)
+
+    # Reload from disk to verify persistence
+    reloaded_posts = Collection(
+        BlogPost, path=target_path, format=target_format, body_field="content"
+    )
+
+    # Compare source and reloaded collections
+    assert source_posts.count() == reloaded_posts.count()
+
+    source_list = source_posts.order_by("title").to_list()
+    reloaded_list = reloaded_posts.order_by("title").to_list()
+
+    for original, reloaded in zip(source_list, reloaded_list, strict=True):
+        # Verify all fields except content (markdown may add newlines)
+        assert original.title == reloaded.title
+        assert original.date == reloaded.date
+        assert original.tags == reloaded.tags
+        assert original.draft == reloaded.draft
+        # Content should be preserved (strip for markdown format differences)
+        assert original.content.strip() == reloaded.content.strip()
+        # Specifically verify date type preservation
+        assert isinstance(reloaded.date, date)
+
+
+def test_migrate_to_new_model_compatible_fields(tmp_path: Path) -> None:
+    """Test migrating to a new model with compatible fields and automatic type casting."""
+
+    class OldPost(BaseModel):
+        title: str
+        date_str: str  # Old model has string date
+        tags: list[str] = []
+        draft: bool = False
+        content: str
+
+    class NewPost(BaseModel):
+        title: str
+        date_str: date  # New model casts string to date
+        tags: list[str] = []
+        draft: bool = False
+        content: str
+        view_count: int = 0  # New field with default
+
+    old_path = tmp_path / "old_posts"
+    new_path = tmp_path / "new_posts"
+
+    # Create original collection with string date field
+    posts = Collection(OldPost, path=old_path, format="json", body_field="content")
+    posts.add(OldPost(title="Test", date_str="2025-01-15", tags=["test"], content="Content"))
+
+    # Migrate to new model - Pydantic should automatically cast string to date
+    posts.migrate(NewPost, path=new_path)
+
+    # Reload from disk to verify persistence
+    reloaded = Collection(NewPost, path=new_path, format="json", body_field="content")
+    enhanced = reloaded.first()
+
+    # Verify migration and automatic date casting
+    assert enhanced is not None
+    assert enhanced.title == "Test"
+    assert enhanced.view_count == 0
+    assert isinstance(enhanced.date_str, date)
+    assert enhanced.date_str == date(2025, 1, 15)
+
+
+def test_migrate_with_custom_transform(tmp_path: Path) -> None:
+    """Test migrating with a custom transformation function."""
+
+    class UppercaseBlogPost(BaseModel):
+        title: str
+        date: date
+        tags: list[str] = []
+        draft: bool = False
+        content: str
+
+    old_path = tmp_path / "old_posts"
+    new_path = tmp_path / "new_posts"
+
+    # Create original collection
+    posts = Collection(BlogPost, path=old_path, format="json", body_field="content")
+    posts.add(BlogPost(title="test", date=date(2025, 1, 1), tags=["lower"], content="content"))
+
+    # Define custom transform
+    def uppercase_transform(old: BlogPost) -> UppercaseBlogPost:
+        return UppercaseBlogPost(
+            title=old.title.upper(),
+            date=old.date,
+            tags=[t.upper() for t in old.tags],
+            draft=old.draft,
+            content=old.content.upper(),
+        )
+
+    # Migrate with transform
+    posts.migrate(UppercaseBlogPost, path=new_path, transform=uppercase_transform)
+
+    # Reload from disk to verify transformation persisted
+    reloaded = Collection(UppercaseBlogPost, path=new_path, format="json", body_field="content")
+    upper = reloaded.first()
+
+    assert upper is not None
+    assert upper.title == "TEST"
+    assert upper.tags == ["LOWER"]
+    assert upper.content == "CONTENT"
+
+
+def test_migrate_requires_explicit_path(tmp_path: Path) -> None:
+    """Test that migrate requires an explicit path parameter."""
+    old_path = tmp_path / "posts"
+
+    posts = Collection(BlogPost, path=old_path, format="json", body_field="content")
+    posts.add(BlogPost(title="Test", date=date(2025, 1, 1), content="Content"))
+
+    # Migrate without specifying path should raise TypeError
+    with pytest.raises(TypeError, match="missing 1 required keyword-only argument: 'path'"):
+        posts.migrate(BlogPost, format="yaml")  # type: ignore[call-arg]
