@@ -2,7 +2,11 @@
 
 > Instead of having an ORM on top of a database, why not have a collection on top of a folder?
 
-Disk-backed collections powered by Pydantic models. This is pretty much the whole API:
+### Abstract
+
+**diskdantic** provides disk-backed collections powered by Pydantic models, enabling you to treat a folder as a queryable database. It supports markdown, JSON, and YAML formats, offering a simple API for filtering, sorting, and managing structured data files with automatic validation and serialization.
+
+### Quick Start
 
 ```python
 from datetime import date
@@ -21,14 +25,16 @@ class BlogPost(BaseModel):
 posts = Collection(
     BlogPost,
     path="./blog/posts",
-    format="markdown",    # required when the folder is empty
-    body_field="content", # required when format is markdown (for the body)
+    format="markdown",
+    body_field="content",
 )
 
-recent = posts.filter(lambda post: not post.draft).order_by("-date").head(3)
+# Query and iterate
+recent = posts.filter(lambda p: not p.draft).order_by("-date").head(3)
 for post in recent:
     print(post.title)
 
+# Add new items
 new_post = BlogPost(
     title="Hello World",
     date=date.today(),
@@ -38,54 +44,26 @@ new_post = BlogPost(
 posts.add(new_post)
 ```
 
-There are also loads of utility functions.
+### API Reference
 
-```python
-# Get all published posts
-published = posts.filter(lambda post: not post.draft)
+**Query Methods**
 
-# Get posts with specific tag
-intro_posts = posts.filter(lambda post: "intro" in post.tags)
+- `filter(predicate)` - Filter items by predicate function
+- `order_by(field)` - Sort by field (prefix with `-` for descending)
+- `head(n=5)` / `tail(n=5)` - Get first/last n items
+- `to_list()` - Materialize query to list
+- `count()` - Count matching items
+- `first()` / `last()` - Get first/last item or None
+- `exists(predicate=None)` - Check if any items match
+- `get(filename)` - Load specific file by name
 
-# Chain filters
-recent_published = posts.filter(lambda p: not p.draft).filter(lambda p: p.date.year == 2025)
-```
+**Lifecycle Methods**
 
-It's meant to work with markdown files, but it should also work with yaml/json.
+- `add(model, path=None)` - Add new model to collection
+- `update(model)` - Update existing model on disk
+- `upsert(model)` - Add if new, update if exists
+- `delete(target)` - Delete by model, filename, or Path
+- `refresh(model)` - Reload model from disk
+- `path_for(model)` - Get disk path for a model
 
-## API Reference
-
-### Query Methods
-
-- **`filter(predicate)`** - Filter items by a predicate function
-- **`order_by(field)`** - Sort by field (prefix with `-` for descending)
-- **`head(n=5)`** - Get first n items
-- **`tail(n=5)`** - Get last n items
-- **`to_list()`** - Materialize query to list
-- **`count()`** - Count matching items
-- **`first()`** - Get first item or None
-- **`last()`** - Get last item or None
-- **`exists(predicate=None)`** - Check if any items match
-- **`get(filename)`** - Load specific file by name
-
-### Lifecycle Methods
-
-- **`add(model, path=None)`** - Add new model to collection (returns Path)
-- **`update(model)`** - Update existing model on disk (returns Path)
-- **`upsert(model)`** - Add if new, update if exists (returns Path)
-- **`delete(target)`** - Delete by model, filename, or Path
-- **`refresh(model)`** - Reload model from disk
-- **`path_for(model)`** - Get disk path for a model
-
-### Iteration
-
-Collections are iterable and return model instances:
-
-```python
-for post in posts:
-    print(post.title)
-```
-
-## Why?
-
-It makes it easier to write a custom CMS on top of your disk, which is nice. But it also feels like a fun thing that should exist.
+Collections are iterable and return model instances.
