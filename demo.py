@@ -47,7 +47,7 @@ def _(BlogPost):
 
 @app.cell
 def _(post, posts):
-    posts.add(post)
+    posts.create(post)
     return
 
 

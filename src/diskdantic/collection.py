@@ -70,6 +70,10 @@ class Collection(Generic[T]):
     recursive:
         When ``True``, the collection scans sub-directories with ``Path.rglob``;
         otherwise only files directly inside ``path`` are considered.
+    identifier:
+        Optional field name to use for unique identification and filename generation.
+        When set, the value of this field determines the filename and ensures uniqueness.
+        When not set, files are named with zero-padded integers (0001, 0002, ...).
 
     The collection loads files lazily: query methods compose filters and only
     read from disk when materialized (iteration, ``to_list``, ``first``...).
@@ -84,6 +88,7 @@ class Collection(Generic[T]):
         format: str | None = None,
         body_field: str | None = None,
         recursive: bool = False,
+        identifier: str | None = None,
     ) -> None:
         self.model = model
         self.root = Path(path).expanduser()
@@ -93,6 +98,7 @@ class Collection(Generic[T]):
             _resolve_handler(format) if format is not None else self._infer_handler(strict=True)
         )
         self.body_field = body_field
+        self.identifier = identifier
 
         self._model_cache: dict[Path, T] = {}
         self._path_refs: dict[int, tuple[weakref.ReferenceType[T], Path]] = {}
@@ -146,13 +152,13 @@ class Collection(Generic[T]):
         return self._load_model(target)
 
     # Lifecycle operations ----------------------------------------------
-    def add(self, model: T, path: Path | str | None = None) -> Path:
-        # Check if model is already tracked - if so, return existing path
-        existing_path = self._lookup_path(model)
-        if existing_path is not None:
-            return existing_path
+    def create(self, model: T, path: Path | str | None = None) -> Path:
+        """Create a new model on disk.
 
-        target = self._prepare_path(model, explicit_path=path)
+        Raises ValueError if a model with the same identifier already exists
+        (when identifier is set).
+        """
+        target = self._prepare_path(model, explicit_path=path, allow_existing=False)
         data = model.model_dump()
         self._handler.write(target, data, body_field=self.body_field)
         self._register_model(model, target)
@@ -160,22 +166,45 @@ class Collection(Generic[T]):
         return target
 
     def update(self, model: T) -> Path:
+        """Update an existing model that was loaded from disk."""
         path = self._lookup_path(model)
         if path is None:
             raise MissingPathError(
                 "Cannot update model that was not loaded from disk. "
-                "Use add() or upsert(), or provide path explicitly."
+                "Use create() or create_or_update()."
             )
         data = model.model_dump()
         self._handler.write(path, data, body_field=self.body_field)
         self._model_cache[path] = model
         return path
 
-    def upsert(self, model: T) -> Path:
+    def create_or_update(self, model: T) -> Path:
+        """Create a new model or update existing one.
+
+        When identifier is set, checks if a file with that identifier exists:
+        - If exists: updates the existing file
+        - If not: creates a new file
+
+        When identifier is not set, behaves like create().
+        """
+        # Check if model is already tracked in memory
         path = self._lookup_path(model)
-        if path is None:
-            return self.add(model)
-        return self.update(model)
+        if path is not None:
+            return self.update(model)
+
+        # When identifier is set, check filesystem for existing file
+        if self.identifier is not None:
+            candidate = self._derive_path_for_model(model)
+            if candidate.exists():
+                # File exists with this identifier - update it
+                data = model.model_dump()
+                self._handler.write(candidate, data, body_field=self.body_field)
+                self._register_model(model, candidate)
+                self._model_cache[candidate] = model
+                return candidate
+
+        # No existing file found - create new one
+        return self.create(model)
 
     def delete(self, target: T | str | Path) -> None:
         if isinstance(target, BaseModel):
@@ -202,39 +231,72 @@ class Collection(Generic[T]):
         return self._lookup_path(model)
 
     # Internal helpers --------------------------------------------------
-    def _prepare_path(self, model: T, explicit_path: Path | str | None = None) -> Path:
+    def _prepare_path(
+        self, model: T, explicit_path: Path | str | None = None, allow_existing: bool = False
+    ) -> Path:
         if explicit_path is not None:
             path = Path(explicit_path)
             if not path.is_absolute():
                 path = self.root / path
             return path
+
         candidate = self._derive_path_for_model(model)
 
-        # If the derived path exists, check if it contains the same data
-        if candidate.exists():
-            existing_model = self._load_model(candidate, force=True)
-            if existing_model.model_dump() == model.model_dump():
-                # Same content - reuse this path
-                return candidate
+        # If identifier is set, enforce uniqueness
+        if self.identifier is not None and candidate.exists() and not allow_existing:
+            raise ValueError(
+                f"Object with identifier '{getattr(model, self.identifier, None)}' "
+                f"already exists at {candidate}. Use create_or_update() to update it."
+            )
 
-        # Path doesn't exist or contains different content - find an available name
-        counter = 1
-        while candidate.exists():
-            candidate = candidate.with_stem(f"{candidate.stem}-{counter}")
-            counter += 1
+        # For integer-based naming, candidate is always unique (increments automatically)
         return candidate
 
     def _derive_path_for_model(self, model: T) -> Path:
-        data = model.model_dump()
-        for key in ("slug", "id", "name", "title"):
-            value = data.get(key)
-            if isinstance(value, str) and value.strip():
-                slug = slugify(value)
-                break
-        else:
-            slug = uuid4().hex
-        filename = slug + self._handler.extension
+        # If identifier is specified, use that field's value
+        if self.identifier is not None:
+            identifier_value = self._extract_identifier(model)
+            filename = identifier_value + self._handler.extension
+            return self.root / filename
+
+        # Otherwise, use zero-padded integer naming
+        next_num = self._get_next_integer_id()
+        filename = str(next_num).zfill(4) + self._handler.extension
         return self.root / filename
+
+    def _extract_identifier(self, model: T) -> str:
+        """Extract the identifier field value from a model.
+
+        The user is responsible for providing a valid filename-safe identifier.
+        """
+        data = model.model_dump()
+        value = data.get(self.identifier)
+        if value is None:
+            raise ValueError(f"Model missing required identifier field: {self.identifier}")
+        if not isinstance(value, str):
+            value = str(value)
+        if not value:
+            raise ValueError(f"Identifier field '{self.identifier}' is empty")
+        return value
+
+    def _get_next_integer_id(self) -> int:
+        """Get the next available integer ID by scanning the filesystem.
+
+        Only considers numeric filenames when identifier is None.
+        Returns max + 1 to avoid reusing deleted IDs.
+        """
+        if self.identifier is not None:
+            raise ValueError("_get_next_integer_id should only be called when identifier is None")
+
+        # Scan filesystem to find max numeric ID
+        existing_files = list(self._iter_paths())
+        max_num = 0
+        for path in existing_files:
+            stem = path.stem
+            if stem.isdigit():
+                max_num = max(max_num, int(stem))
+
+        return max_num + 1
 
     def _register_model(self, model: T, path: Path) -> None:
         model_id = id(model)
