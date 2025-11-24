@@ -35,7 +35,7 @@ new_post = BlogPost(
     tags=["intro"],
     content="# Hello\n\nIt works!",
 )
-posts.add(new_post)
+posts.create(new_post)
 ```
 
 There are also loads of utility functions.
@@ -70,13 +70,49 @@ It's meant to work with markdown files, but it should also work with yaml/json.
 
 ### Lifecycle Methods
 
-- **`add(model, path=None)`** - Add new model to collection (returns Path)
+- **`create(model, path=None)`** - Create new model in collection (raises error if identifier exists)
 - **`update(model)`** - Update existing model on disk (returns Path)
-- **`upsert(model)`** - Add if new, update if exists (returns Path)
+- **`create_or_update(model)`** - Create if new, update if exists (returns Path)
 - **`delete(target)`** - Delete by model, filename, or Path
 - **`refresh(model)`** - Reload model from disk
 - **`path_for(model)`** - Get disk path for a model
 - **`migrate(new_model, path, format=None, ...)`** - Migrate to new model type and/or format
+
+### File Naming
+
+By default, files are named with zero-padded integers (`0001.md`, `0002.md`, etc.).
+
+You can specify an `identifier` field to use custom naming based on a model property:
+
+```python
+from pydantic import computed_field
+
+class BlogPost(BaseModel):
+    title: str
+    content: str
+
+    @computed_field
+    @property
+    def slug(self) -> str:
+        return self.title.lower().replace(" ", "-")
+
+posts = Collection(
+    BlogPost,
+    path="./posts",
+    format="markdown",
+    body_field="content",
+    identifier="slug"  # files named by computed slug field
+)
+
+# Creates file: my-post.md
+posts.create(BlogPost(title="My Post", content="..."))
+
+# Raises error - slug already exists (both have same title)
+posts.create(BlogPost(title="My Post", content="Different content"))
+
+# Updates existing file
+posts.create_or_update(BlogPost(title="My Post", content="Updated content"))
+```
 
 ### Iteration
 

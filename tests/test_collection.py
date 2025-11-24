@@ -59,7 +59,7 @@ def test_collection_basic_roundtrip(tmp_path: Path) -> None:
         tags=["new"],
         content="New content",
     )
-    new_path = posts.add(new_post)
+    new_path = posts.create(new_post)
     assert new_path.exists()
 
     refreshed = posts.refresh(new_post)
@@ -92,7 +92,7 @@ def test_date_serialization_json(tmp_path: Path) -> None:
         content="Testing JSON serialization",
     )
 
-    path = posts.add(post)
+    path = posts.create(post)
 
     # Verify file was created
     assert path.exists()
@@ -123,7 +123,7 @@ def test_date_serialization_yaml(tmp_path: Path) -> None:
         content="Testing YAML serialization",
     )
 
-    path = posts.add(post)
+    path = posts.create(post)
 
     # Verify file was created
     assert path.exists()
@@ -154,7 +154,7 @@ def test_date_serialization_markdown(tmp_path: Path) -> None:
         content="Testing Markdown serialization",
     )
 
-    path = posts.add(post)
+    path = posts.create(post)
 
     # Verify file was created
     assert path.exists()
@@ -173,56 +173,64 @@ def test_date_serialization_markdown(tmp_path: Path) -> None:
     assert isinstance(loaded.date, date)
 
 
-def test_add_prevents_duplicates(tmp_path: Path) -> None:
-    """Test that calling add() multiple times with same model doesn't create duplicates."""
-    posts = Collection(BlogPost, path=tmp_path, format="yaml", body_field="content")
+def test_create_prevents_duplicates_with_identifier(tmp_path: Path) -> None:
+    """Test that create() with identifier field prevents duplicates."""
 
-    post = BlogPost(
-        title="Test Post",
-        date=date(2025, 11, 9),
-        tags=["test"],
-        content="Testing duplicate prevention",
-    )
+    class Post(BaseModel):
+        slug: str
+        title: str
+        content: str
 
-    # Add the same model object multiple times
-    path1 = posts.add(post)
-    path2 = posts.add(post)
-    path3 = posts.add(post)
+    posts = Collection(Post, path=tmp_path, format="yaml", body_field="content", identifier="slug")
 
-    # All paths should be the same
-    assert path1 == path2 == path3
+    post = Post(slug="test-post", title="Test Post", content="Testing duplicate prevention")
+
+    # First create should succeed
+    path1 = posts.create(post)
+    assert path1.exists()
+
+    # Second create with same identifier should fail
+    post2 = Post(slug="test-post", title="Different Title", content="Different content")
+    with pytest.raises(ValueError, match="already exists"):
+        posts.create(post2)
 
     # Only one file should exist
     files = list(tmp_path.glob("*.yaml"))
     assert len(files) == 1
-    assert files[0] == path1
-
-    # Verify the collection only sees one post
-    assert posts.count() == 1
 
 
-def test_add_prevents_duplicates_from_loaded_models(tmp_path: Path) -> None:
-    """Test that adding loaded models doesn't create duplicates."""
-    posts = Collection(BlogPost, path=tmp_path, format="yaml", body_field="content")
+def test_create_or_update_prevents_duplicates_with_identifier(tmp_path: Path) -> None:
+    """Test that create_or_update with identifier prevents duplicates."""
 
-    # Create and add initial posts
+    class Post(BaseModel):
+        slug: str
+        title: str
+        content: str
+
+    posts = Collection(Post, path=tmp_path, format="yaml", body_field="content", identifier="slug")
+
+    # Create initial posts
     initial_posts = [
-        BlogPost(title="First", date=date(2025, 1, 1), content="First post"),
-        BlogPost(title="Second", date=date(2025, 1, 2), content="Second post"),
-        BlogPost(title="Third", date=date(2025, 1, 3), content="Third post"),
+        Post(slug="first", title="First", content="First post"),
+        Post(slug="second", title="Second", content="Second post"),
+        Post(slug="third", title="Third", content="Third post"),
     ]
 
     for p in initial_posts:
-        posts.add(p)
+        posts.create(p)
 
     initial_count = posts.count()
     assert initial_count == 3
 
-    # Load posts and try to add them again (simulates iteration pattern)
+    # Load posts and try to create_or_update them again (simulates iteration pattern)
     for _ in range(10):
-        posts_new = Collection(BlogPost, path=tmp_path, format="yaml", body_field="content")
-        for p in posts:
-            posts_new.add(p)
+        posts_new = Collection(
+            Post, path=tmp_path, format="yaml", body_field="content", identifier="slug"
+        )
+        for p in posts_new:
+            # Modify content slightly
+            p.content = f"{p.content} - updated"
+            posts_new.create_or_update(p)
 
     # Should still have exactly 3 posts and 3 files
     final_count = posts_new.count()
@@ -231,6 +239,86 @@ def test_add_prevents_duplicates_from_loaded_models(tmp_path: Path) -> None:
     assert final_count == 3
     assert len(files) == 3
     assert {f.stem for f in files} == {"first", "second", "third"}
+
+
+def test_integer_naming_without_identifier(tmp_path: Path) -> None:
+    """Test that files are named with zero-padded integers when no identifier is set."""
+    posts = Collection(BlogPost, path=tmp_path, format="json", body_field="content")
+
+    post1 = BlogPost(title="First", date=date(2025, 1, 1), content="First post")
+    post2 = BlogPost(title="Second", date=date(2025, 1, 2), content="Second post")
+    post3 = BlogPost(title="Third", date=date(2025, 1, 3), content="Third post")
+
+    path1 = posts.create_or_update(post1)
+    path2 = posts.create_or_update(post2)
+    path3 = posts.create_or_update(post3)
+
+    # Verify files are named with zero-padded integers
+    assert path1.stem == "0001"
+    assert path2.stem == "0002"
+    assert path3.stem == "0003"
+
+    # Verify all files exist
+    assert path1.exists()
+    assert path2.exists()
+    assert path3.exists()
+
+
+def test_extract_identifier_helper(tmp_path: Path) -> None:
+    """Test the _extract_identifier helper method."""
+
+    class Post(BaseModel):
+        slug: str
+        title: str
+
+    posts = Collection(Post, path=tmp_path, format="json", identifier="slug")
+
+    # Test normal extraction (no transformation)
+    post = Post(slug="my-post", title="Test")
+    identifier = posts._extract_identifier(post)
+    assert identifier == "my-post"
+
+    # Test missing identifier field
+    posts_no_id = Collection(Post, path=tmp_path, format="json", identifier="missing_field")
+    with pytest.raises(ValueError, match="missing required identifier field"):
+        posts_no_id._extract_identifier(post)
+
+    # Test empty identifier
+    posts_title = Collection(Post, path=tmp_path, format="json", identifier="slug")
+    empty_post = Post(slug="", title="Test")
+    with pytest.raises(ValueError, match="is empty"):
+        posts_title._extract_identifier(empty_post)
+
+
+def test_get_next_integer_id_helper(tmp_path: Path) -> None:
+    """Test the _get_next_integer_id helper method."""
+
+    class Post(BaseModel):
+        title: str
+
+    # Empty directory should return 1
+    posts = Collection(Post, path=tmp_path, format="json")
+    assert posts._get_next_integer_id() == 1
+
+    # Create first file
+    posts.create(Post(title="First"))
+    # Now max is 1, so next should be 2
+    assert posts._get_next_integer_id() == 2
+
+    # Create files with gaps in sequence
+    (tmp_path / "0005.json").write_text('{"title": "test"}')  # Gap: 3, 4 missing
+
+    # Should scan and find max is 5, return 6 (max + 1, not gap-filling)
+    posts2 = Collection(Post, path=tmp_path, format="json")
+    assert posts2._get_next_integer_id() == 6
+
+    # Each call rescans filesystem (no caching)
+    assert posts2._get_next_integer_id() == 6  # Still 6, nothing changed on disk
+
+    # Test that it raises error when identifier is set
+    posts_with_id = Collection(Post, path=tmp_path, format="json", identifier="title")
+    with pytest.raises(ValueError, match="should only be called when identifier is None"):
+        posts_with_id._get_next_integer_id()
 
 
 def test_json_date_roundtrip_preserves_type(tmp_path: Path) -> None:
@@ -246,7 +334,7 @@ def test_json_date_roundtrip_preserves_type(tmp_path: Path) -> None:
     )
 
     # Write the post
-    path = posts.add(post)
+    path = posts.create(post)
 
     # Verify JSON contains ISO 8601 string
     import json
@@ -296,7 +384,7 @@ def test_migrate_format_conversion(tmp_path: Path, source_format: str, target_fo
     ]
 
     for post in test_posts:
-        source_posts.add(post)
+        source_posts.create(post)
 
     # Migrate to target format
     source_posts.migrate(BlogPost, path=target_path, format=target_format)
@@ -347,7 +435,7 @@ def test_migrate_to_new_model_compatible_fields(tmp_path: Path) -> None:
 
     # Create original collection with string date field
     posts = Collection(OldPost, path=old_path, format="json", body_field="content")
-    posts.add(OldPost(title="Test", date_str="2025-01-15", tags=["test"], content="Content"))
+    posts.create(OldPost(title="Test", date_str="2025-01-15", tags=["test"], content="Content"))
 
     # Migrate to new model - Pydantic should automatically cast string to date
     posts.migrate(NewPost, path=new_path)
@@ -379,7 +467,7 @@ def test_migrate_with_custom_transform(tmp_path: Path) -> None:
 
     # Create original collection
     posts = Collection(BlogPost, path=old_path, format="json", body_field="content")
-    posts.add(BlogPost(title="test", date=date(2025, 1, 1), tags=["lower"], content="content"))
+    posts.create(BlogPost(title="test", date=date(2025, 1, 1), tags=["lower"], content="content"))
 
     # Define custom transform
     def uppercase_transform(old: BlogPost) -> UppercaseBlogPost:
@@ -409,7 +497,7 @@ def test_migrate_requires_explicit_path(tmp_path: Path) -> None:
     old_path = tmp_path / "posts"
 
     posts = Collection(BlogPost, path=old_path, format="json", body_field="content")
-    posts.add(BlogPost(title="Test", date=date(2025, 1, 1), content="Content"))
+    posts.create(BlogPost(title="Test", date=date(2025, 1, 1), content="Content"))
 
     # Migrate without specifying path should raise TypeError
     with pytest.raises(TypeError, match="missing 1 required keyword-only argument: 'path'"):
