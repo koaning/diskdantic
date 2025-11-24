@@ -267,7 +267,3 @@ def test_json_date_roundtrip_preserves_type(tmp_path: Path) -> None:
     assert loaded.date.year == 2025
     assert loaded.date.month == 11
     assert loaded.date.day == 9
-
-
-def test_demo_fail():
-    assert False, "This test should fail"
