@@ -206,7 +206,7 @@ class Collection(Generic[T]):
         self,
         new_model: type[U],
         *,
-        path: Path | str | None = None,
+        path: Path | str,
         format: str | None = None,
         body_field: str | None = None,
         recursive: bool | None = None,
@@ -222,8 +222,7 @@ class Collection(Generic[T]):
         new_model:
             Target Pydantic model type for the migrated collection.
         path:
-            Root directory for the new collection. If not provided, creates a new
-            directory alongside the current one with a "-migrated" suffix.
+            Root directory for the new collection. This parameter is required.
         format:
             File format for the new collection (``"json"``, ``"yaml"``, ``"markdown"``).
             If not provided, uses the same format as the current collection.
@@ -270,14 +269,12 @@ class Collection(Generic[T]):
         ...     )
         >>> new_collection = old_collection.migrate(
         ...     TimestampedPost,
+        ...     path="posts-timestamped",
         ...     transform=add_timestamp
         ... )
         """
-        # Determine target path
-        if path is None:
-            target_path = self.root.parent / f"{self.root.name}-migrated"
-        else:
-            target_path = Path(path)
+        # Validate required path parameter
+        target_path = Path(path)
 
         # Determine target format
         if format is None:

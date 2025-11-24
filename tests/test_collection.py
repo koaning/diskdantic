@@ -327,9 +327,16 @@ def test_migrate_format_conversion(tmp_path: Path, source_format: str, target_fo
 def test_migrate_to_new_model_compatible_fields(tmp_path: Path) -> None:
     """Test migrating to a new model with compatible fields and automatic type casting."""
 
-    class EnhancedBlogPost(BaseModel):
+    class OldPost(BaseModel):
         title: str
-        date: date  # Test that string dates are automatically cast
+        date_str: str  # Old model has string date
+        tags: list[str] = []
+        draft: bool = False
+        content: str
+
+    class NewPost(BaseModel):
+        title: str
+        date_str: date  # New model casts string to date
         tags: list[str] = []
         draft: bool = False
         content: str
@@ -338,23 +345,23 @@ def test_migrate_to_new_model_compatible_fields(tmp_path: Path) -> None:
     old_path = tmp_path / "old_posts"
     new_path = tmp_path / "new_posts"
 
-    # Create original collection with string date to test automatic casting
-    posts = Collection(BlogPost, path=old_path, format="json", body_field="content")
-    posts.add(BlogPost(title="Test", date="2025-01-15", tags=["test"], content="Content"))
+    # Create original collection with string date field
+    posts = Collection(OldPost, path=old_path, format="json", body_field="content")
+    posts.add(OldPost(title="Test", date_str="2025-01-15", tags=["test"], content="Content"))
 
-    # Migrate to enhanced model
-    posts.migrate(EnhancedBlogPost, path=new_path)
+    # Migrate to new model - Pydantic should automatically cast string to date
+    posts.migrate(NewPost, path=new_path)
 
     # Reload from disk to verify persistence
-    reloaded = Collection(EnhancedBlogPost, path=new_path, format="json", body_field="content")
+    reloaded = Collection(NewPost, path=new_path, format="json", body_field="content")
     enhanced = reloaded.first()
 
     # Verify migration and automatic date casting
     assert enhanced is not None
     assert enhanced.title == "Test"
     assert enhanced.view_count == 0
-    assert isinstance(enhanced.date, date)
-    assert enhanced.date == date(2025, 1, 15)
+    assert isinstance(enhanced.date_str, date)
+    assert enhanced.date_str == date(2025, 1, 15)
 
 
 def test_migrate_with_custom_transform(tmp_path: Path) -> None:
@@ -397,18 +404,13 @@ def test_migrate_with_custom_transform(tmp_path: Path) -> None:
     assert upper.content == "CONTENT"
 
 
-def test_migrate_default_path(tmp_path: Path) -> None:
-    """Test that migrate creates a default path if not specified."""
+def test_migrate_requires_explicit_path(tmp_path: Path) -> None:
+    """Test that migrate requires an explicit path parameter."""
     old_path = tmp_path / "posts"
 
     posts = Collection(BlogPost, path=old_path, format="json", body_field="content")
     posts.add(BlogPost(title="Test", date=date(2025, 1, 1), content="Content"))
 
-    # Migrate without specifying path
-    migrated = posts.migrate(BlogPost, format="yaml")
-
-    # Should create "posts-migrated" directory
-    expected_path = tmp_path / "posts-migrated"
-    assert migrated.root == expected_path
-    assert expected_path.exists()
-    assert migrated.count() == 1
+    # Migrate without specifying path should raise TypeError
+    with pytest.raises(TypeError, match="missing 1 required keyword-only argument: 'path'"):
+        posts.migrate(BlogPost, format="yaml")  # type: ignore[call-arg]

@@ -76,7 +76,7 @@ It's meant to work with markdown files, but it should also work with yaml/json.
 - **`delete(target)`** - Delete by model, filename, or Path
 - **`refresh(model)`** - Reload model from disk
 - **`path_for(model)`** - Get disk path for a model
-- **`migrate(new_model, path=None, format=None, ...)`** - Migrate to new model type and/or format
+- **`migrate(new_model, path, format=None, ...)`** - Migrate to new model type and/or format
 
 ### Iteration
 
