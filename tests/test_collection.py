@@ -384,7 +384,7 @@ def test_migrate_format_conversion(tmp_path: Path, source_format: str, target_fo
     ]
 
     for post in test_posts:
-        source_posts.add(post)
+        source_posts.create(post)
 
     # Migrate to target format
     source_posts.migrate(BlogPost, path=target_path, format=target_format)
@@ -435,7 +435,7 @@ def test_migrate_to_new_model_compatible_fields(tmp_path: Path) -> None:
 
     # Create original collection with string date field
     posts = Collection(OldPost, path=old_path, format="json", body_field="content")
-    posts.add(OldPost(title="Test", date_str="2025-01-15", tags=["test"], content="Content"))
+    posts.create(OldPost(title="Test", date_str="2025-01-15", tags=["test"], content="Content"))
 
     # Migrate to new model - Pydantic should automatically cast string to date
     posts.migrate(NewPost, path=new_path)
@@ -467,7 +467,7 @@ def test_migrate_with_custom_transform(tmp_path: Path) -> None:
 
     # Create original collection
     posts = Collection(BlogPost, path=old_path, format="json", body_field="content")
-    posts.add(BlogPost(title="test", date=date(2025, 1, 1), tags=["lower"], content="content"))
+    posts.create(BlogPost(title="test", date=date(2025, 1, 1), tags=["lower"], content="content"))
 
     # Define custom transform
     def uppercase_transform(old: BlogPost) -> UppercaseBlogPost:
@@ -497,7 +497,7 @@ def test_migrate_requires_explicit_path(tmp_path: Path) -> None:
     old_path = tmp_path / "posts"
 
     posts = Collection(BlogPost, path=old_path, format="json", body_field="content")
-    posts.add(BlogPost(title="Test", date=date(2025, 1, 1), content="Content"))
+    posts.create(BlogPost(title="Test", date=date(2025, 1, 1), content="Content"))
 
     # Migrate without specifying path should raise TypeError
     with pytest.raises(TypeError, match="missing 1 required keyword-only argument: 'path'"):

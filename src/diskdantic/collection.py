@@ -337,7 +337,7 @@ class Collection(Generic[T]):
         # Migrate all items
         for old_model in self:
             new_model_instance = transform_fn(old_model)
-            new_collection.add(new_model_instance)
+            new_collection.create(new_model_instance)
 
         return new_collection
 
