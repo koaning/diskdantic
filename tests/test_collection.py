@@ -224,7 +224,9 @@ def test_create_or_update_prevents_duplicates_with_identifier(tmp_path: Path) ->
 
     # Load posts and try to create_or_update them again (simulates iteration pattern)
     for _ in range(10):
-        posts_new = Collection(Post, path=tmp_path, format="yaml", body_field="content", identifier="slug")
+        posts_new = Collection(
+            Post, path=tmp_path, format="yaml", body_field="content", identifier="slug"
+        )
         for p in posts_new:
             # Modify content slightly
             p.content = f"{p.content} - updated"

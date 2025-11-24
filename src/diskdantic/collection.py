@@ -5,13 +5,11 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Generic, TypeVar
-from uuid import uuid4
 
 from pydantic import BaseModel
 
 from .exceptions import InconsistentFormatError, MissingPathError, UnknownFormatError
 from .handlers import FileHandler, JsonHandler, MarkdownFrontmatterHandler, YamlHandler
-from .utils import slugify
 
 T = TypeVar("T", bound=BaseModel)
 Predicate = Callable[[T], bool]
