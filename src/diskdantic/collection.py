@@ -12,6 +12,7 @@ from .exceptions import InconsistentFormatError, MissingPathError, UnknownFormat
 from .handlers import FileHandler, JsonHandler, MarkdownFrontmatterHandler, YamlHandler
 
 T = TypeVar("T", bound=BaseModel)
+U = TypeVar("U", bound=BaseModel)
 Predicate = Callable[[T], bool]
 
 FORMAT_REGISTRY: Mapping[str, type[FileHandler]] = {
@@ -227,6 +228,118 @@ class Collection(Generic[T]):
 
     def path_for(self, model: T) -> Path | None:
         return self._lookup_path(model)
+
+    def migrate(
+        self,
+        new_model: type[U],
+        *,
+        path: Path | str,
+        format: str | None = None,
+        body_field: str | None = None,
+        recursive: bool | None = None,
+        transform: Callable[[T], U] | None = None,
+    ) -> Collection[U]:
+        """Migrate collection to a new model type and/or format.
+
+        Creates a new collection with the specified model type and format, then
+        transforms and copies all items from the current collection to the new one.
+
+        Parameters
+        ----------
+        new_model:
+            Target Pydantic model type for the migrated collection.
+        path:
+            Root directory for the new collection. This parameter is required.
+        format:
+            File format for the new collection (``"json"``, ``"yaml"``, ``"markdown"``).
+            If not provided, uses the same format as the current collection.
+        body_field:
+            Optional field name for free-form body content in the new collection.
+            If not provided, uses the same body_field as the current collection.
+        recursive:
+            Whether the new collection should scan subdirectories. If not provided,
+            uses the same recursive setting as the current collection.
+        transform:
+            Optional function to transform models from type T to type U. If not
+            provided, uses dict-based conversion via
+            ``new_model.model_validate(old_model.model_dump())``.
+
+        Returns
+        -------
+        Collection[U]
+            The newly created collection containing all migrated items.
+
+        Examples
+        --------
+        Migrate from JSON to YAML format:
+
+        >>> old_collection = Collection(BlogPost, "posts", format="json")
+        >>> new_collection = old_collection.migrate(
+        ...     BlogPost,
+        ...     path="posts-yaml",
+        ...     format="yaml"
+        ... )
+
+        Migrate to a new model with compatible fields:
+
+        >>> new_collection = old_collection.migrate(
+        ...     EnhancedBlogPost,
+        ...     path="enhanced-posts"
+        ... )
+
+        Migrate with custom transformation:
+
+        >>> def add_timestamp(old: BlogPost) -> TimestampedPost:
+        ...     return TimestampedPost(
+        ...         **old.model_dump(),
+        ...         created_at=datetime.now()
+        ...     )
+        >>> new_collection = old_collection.migrate(
+        ...     TimestampedPost,
+        ...     path="posts-timestamped",
+        ...     transform=add_timestamp
+        ... )
+        """
+        # Validate required path parameter
+        target_path = Path(path)
+
+        # Determine target format
+        if format is None:
+            # Use the same handler type as current collection
+            format_name = type(self._handler).__name__.replace("Handler", "").lower()
+            target_format = format_name
+        else:
+            target_format = format
+
+        # Determine other parameters
+        target_body_field = body_field if body_field is not None else self.body_field
+        target_recursive = recursive if recursive is not None else self._recursive
+
+        # Create the new collection
+        new_collection: Collection[U] = Collection(
+            new_model,
+            target_path,
+            format=target_format,
+            body_field=target_body_field,
+            recursive=target_recursive,
+        )
+
+        # Define the transformation function
+        if transform is None:
+
+            def default_transform(old_model: T) -> U:
+                return new_model.model_validate(old_model.model_dump())
+
+            transform_fn = default_transform
+        else:
+            transform_fn = transform
+
+        # Migrate all items
+        for old_model in self:
+            new_model_instance = transform_fn(old_model)
+            new_collection.add(new_model_instance)
+
+        return new_collection
 
     # Internal helpers --------------------------------------------------
     def _prepare_path(
