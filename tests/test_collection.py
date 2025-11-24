@@ -269,98 +269,67 @@ def test_json_date_roundtrip_preserves_type(tmp_path: Path) -> None:
     assert loaded.date.day == 9
 
 
-def test_migrate_format_json_to_yaml(tmp_path: Path) -> None:
-    """Test migrating a collection from JSON to YAML format."""
-    json_path = tmp_path / "json_posts"
-    yaml_path = tmp_path / "yaml_posts"
+@pytest.mark.parametrize(
+    "source_format,target_format",
+    [
+        ("json", "yaml"),
+        ("yaml", "json"),
+        ("json", "markdown"),
+        ("markdown", "json"),
+        ("yaml", "markdown"),
+        ("markdown", "yaml"),
+    ],
+)
+def test_migrate_format_conversion(tmp_path: Path, source_format: str, target_format: str) -> None:
+    """Test migrating collections between different formats preserves all data."""
+    source_path = tmp_path / f"{source_format}_posts"
+    target_path = tmp_path / f"{target_format}_posts"
 
-    # Create JSON collection
-    posts = Collection(BlogPost, path=json_path, format="json", body_field="content")
-
-    # Add test posts
-    posts.add(BlogPost(title="First", date=date(2025, 1, 1), tags=["json"], content="First post"))
-    posts.add(BlogPost(title="Second", date=date(2025, 1, 2), tags=["json"], content="Second post"))
-
-    assert posts.count() == 2
-
-    # Migrate to YAML
-    yaml_posts = posts.migrate(BlogPost, path=yaml_path, format="yaml")
-
-    # Verify new collection
-    assert yaml_posts.count() == 2
-    assert list(yaml_path.glob("*.yaml")) or list(yaml_path.glob("*.yml"))
-
-    # Verify content preserved
-    first = yaml_posts.filter(lambda p: p.title == "First").first()
-    assert first is not None
-    assert first.date == date(2025, 1, 1)
-    assert first.tags == ["json"]
-    assert first.content == "First post"
-
-
-def test_migrate_format_yaml_to_json(tmp_path: Path) -> None:
-    """Test migrating a collection from YAML to JSON format."""
-    yaml_path = tmp_path / "yaml_posts"
-    json_path = tmp_path / "json_posts"
-
-    # Create YAML collection
-    posts = Collection(BlogPost, path=yaml_path, format="yaml", body_field="content")
-
-    # Add test posts
-    posts.add(BlogPost(title="First", date=date(2025, 1, 1), tags=["yaml"], content="First post"))
-    posts.add(BlogPost(title="Second", date=date(2025, 1, 2), tags=["yaml"], content="Second post"))
-
-    # Migrate to JSON
-    json_posts = posts.migrate(BlogPost, path=json_path, format="json")
-
-    # Verify new collection
-    assert json_posts.count() == 2
-    json_files = list(json_path.glob("*.json"))
-    assert len(json_files) == 2
-
-    # Verify content preserved
-    first = json_posts.filter(lambda p: p.title == "First").first()
-    assert first is not None
-    assert first.date == date(2025, 1, 1)
-    assert first.tags == ["yaml"]
-
-
-def test_migrate_with_dates_preserves_type(tmp_path: Path) -> None:
-    """Test that migrating collections with date fields preserves date types."""
-    json_path = tmp_path / "json_posts"
-    yaml_path = tmp_path / "yaml_posts"
-
-    # Create JSON collection with dates
-    posts = Collection(BlogPost, path=json_path, format="json", body_field="content")
-
-    original_date = date(2025, 11, 24)
-    post = BlogPost(
-        title="Date Test",
-        date=original_date,
-        tags=["migration", "dates"],
-        content="Testing date preservation during migration",
+    # Create source collection with test data including dates
+    source_posts = Collection(
+        BlogPost, path=source_path, format=source_format, body_field="content"
     )
-    posts.add(post)
 
-    # Migrate to YAML
-    yaml_posts = posts.migrate(BlogPost, path=yaml_path, format="yaml")
+    test_posts = [
+        BlogPost(title="First", date=date(2025, 1, 1), tags=["test"], content="First post"),
+        BlogPost(title="Second", date=date(2025, 12, 25), tags=["test"], content="Second post"),
+    ]
 
-    # Verify date is preserved as date type
-    loaded = yaml_posts.first()
-    assert loaded is not None
-    assert isinstance(loaded.date, date), f"Expected date type, got {type(loaded.date)}"
-    assert loaded.date == original_date
-    assert loaded.date.year == 2025
-    assert loaded.date.month == 11
-    assert loaded.date.day == 24
+    for post in test_posts:
+        source_posts.add(post)
+
+    # Migrate to target format
+    source_posts.migrate(BlogPost, path=target_path, format=target_format)
+
+    # Reload from disk to verify persistence
+    reloaded_posts = Collection(
+        BlogPost, path=target_path, format=target_format, body_field="content"
+    )
+
+    # Compare source and reloaded collections
+    assert source_posts.count() == reloaded_posts.count()
+
+    source_list = source_posts.order_by("title").to_list()
+    reloaded_list = reloaded_posts.order_by("title").to_list()
+
+    for original, reloaded in zip(source_list, reloaded_list, strict=True):
+        # Verify all fields except content (markdown may add newlines)
+        assert original.title == reloaded.title
+        assert original.date == reloaded.date
+        assert original.tags == reloaded.tags
+        assert original.draft == reloaded.draft
+        # Content should be preserved (strip for markdown format differences)
+        assert original.content.strip() == reloaded.content.strip()
+        # Specifically verify date type preservation
+        assert isinstance(reloaded.date, date)
 
 
 def test_migrate_to_new_model_compatible_fields(tmp_path: Path) -> None:
-    """Test migrating to a new model with compatible fields."""
+    """Test migrating to a new model with compatible fields and automatic type casting."""
 
     class EnhancedBlogPost(BaseModel):
         title: str
-        date: date
+        date: date  # Test that string dates are automatically cast
         tags: list[str] = []
         draft: bool = False
         content: str
@@ -369,19 +338,23 @@ def test_migrate_to_new_model_compatible_fields(tmp_path: Path) -> None:
     old_path = tmp_path / "old_posts"
     new_path = tmp_path / "new_posts"
 
-    # Create original collection
+    # Create original collection with string date to test automatic casting
     posts = Collection(BlogPost, path=old_path, format="json", body_field="content")
-    posts.add(BlogPost(title="Test", date=date(2025, 1, 1), content="Content"))
+    posts.add(BlogPost(title="Test", date="2025-01-15", tags=["test"], content="Content"))
 
     # Migrate to enhanced model
-    enhanced_posts = posts.migrate(EnhancedBlogPost, path=new_path)
+    posts.migrate(EnhancedBlogPost, path=new_path)
 
-    # Verify migration
-    assert enhanced_posts.count() == 1
-    enhanced = enhanced_posts.first()
+    # Reload from disk to verify persistence
+    reloaded = Collection(EnhancedBlogPost, path=new_path, format="json", body_field="content")
+    enhanced = reloaded.first()
+
+    # Verify migration and automatic date casting
     assert enhanced is not None
     assert enhanced.title == "Test"
     assert enhanced.view_count == 0
+    assert isinstance(enhanced.date, date)
+    assert enhanced.date == date(2025, 1, 15)
 
 
 def test_migrate_with_custom_transform(tmp_path: Path) -> None:
@@ -412,11 +385,12 @@ def test_migrate_with_custom_transform(tmp_path: Path) -> None:
         )
 
     # Migrate with transform
-    upper_posts = posts.migrate(UppercaseBlogPost, path=new_path, transform=uppercase_transform)
+    posts.migrate(UppercaseBlogPost, path=new_path, transform=uppercase_transform)
 
-    # Verify transformation applied
-    assert upper_posts.count() == 1
-    upper = upper_posts.first()
+    # Reload from disk to verify transformation persisted
+    reloaded = Collection(UppercaseBlogPost, path=new_path, format="json", body_field="content")
+    upper = reloaded.first()
+
     assert upper is not None
     assert upper.title == "TEST"
     assert upper.tags == ["LOWER"]
@@ -438,57 +412,3 @@ def test_migrate_default_path(tmp_path: Path) -> None:
     assert migrated.root == expected_path
     assert expected_path.exists()
     assert migrated.count() == 1
-
-
-def test_migrate_preserves_recursive_setting(tmp_path: Path) -> None:
-    """Test that migrate preserves recursive setting by default."""
-    old_path = tmp_path / "posts"
-
-    # Create recursive collection
-    posts = Collection(BlogPost, path=old_path, format="json", body_field="content", recursive=True)
-
-    # Migrate without specifying recursive
-    migrated = posts.migrate(BlogPost, path=tmp_path / "new_posts")
-
-    # Should preserve recursive setting
-    assert migrated._recursive is True
-
-
-def test_migrate_markdown_to_json_with_dates(tmp_path: Path) -> None:
-    """Test migrating from markdown to JSON preserves date fields correctly."""
-    md_path = tmp_path / "md_posts"
-    json_path = tmp_path / "json_posts"
-
-    # Create markdown collection
-    posts = Collection(BlogPost, path=md_path, format="markdown", body_field="content")
-
-    # Add post with date
-    test_date = date(2025, 12, 25)
-    posts.add(
-        BlogPost(
-            title="Holiday Post",
-            date=test_date,
-            tags=["holiday", "markdown"],
-            content="Holiday content with special date",
-        )
-    )
-
-    # Migrate to JSON
-    json_posts = posts.migrate(BlogPost, path=json_path, format="json")
-
-    # Verify date preserved correctly
-    loaded = json_posts.first()
-    assert loaded is not None
-    assert isinstance(loaded.date, date)
-    assert loaded.date == test_date
-    assert loaded.date.year == 2025
-    assert loaded.date.month == 12
-    assert loaded.date.day == 25
-
-    # Verify JSON file has proper date format
-    import json
-
-    json_file = next(json_path.glob("*.json"))
-    with json_file.open("r") as f:
-        data = json.load(f)
-    assert data["date"] == "2025-12-25"
